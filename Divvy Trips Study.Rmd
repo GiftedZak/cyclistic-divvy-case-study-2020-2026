@@ -1,0 +1,662 @@
+---
+title: "Cyclistic (Divvy) Bike-Share Case Study"
+author: "Zakayo Odhiambo"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    theme: flatly
+    df_print: paged
+  pdf_document:
+    toc: true
+    toc_depth: 3
+  word_document:
+    toc: true
+    toc_depth: 3
+---
+
+
+```{r include=FALSE}
+library(DBI)
+library(odbc)
+library(tidyverse)
+library(ggplot2)
+con <- dbConnect(
+  odbc(),
+  Driver = "ODBC Driver 18 for SQL Server",
+  Server = "localhost",
+  Database = "Portfolio",
+  Trusted_Connection = "Yes",
+  TrustServerCertificate = "Yes"
+)
+```
+
+## **INTRODUCTION**
+* Cyclistic is a Chicago-based bike-sharing company that serves a diverse customer base through two membership categories: casual riders, who access the service via short-term passes or pay-as-you-go rates, and annual members, who subscribe to a year-long membership. As a junior data analyst working with the Cyclistic marketing analytics team, my responsibility is to examine customer usage patterns and generate insights that can support the company's marketing and business objectives.
+
+* The primary focus of this analysis is to identify differences in how casual riders and annual members use Cyclistic's bike-sharing services. By examining their riding behaviours, usage patterns, and preferences, the analysis seeks to uncover opportunities for converting casual riders into annual members. This approach allows Cyclistic to develop more targeted marketing strategies informed by existing customer behaviour, potentially improving membership acquisition and long-term customer retention.
+
+* The project follows the six phases of the data analysis process: Ask, Prepare, Process, Analyze, Share, and Act. These phases provide a structured approach to defining the business problem, preparing and examining the data, communicating findings, and developing actionable recommendations.
+
+### **Key Stakeholders and Terminology**
+
+* For consistency throughout this analysis, the following terms and stakeholder roles are used:
+
+  * Cyclistic: A Chicago-based bike-sharing company operating a fleet of more than 5,000 bicycles across approximately 600 docking stations. Its diverse fleet includes traditional two-wheeled bicycles, reclining bikes, hand tricycles, and cargo bikes, making its services accessible to a broader range of users, including people with disabilities.
+
+  * Lily Moreno: The Director of Marketing and the primary manager overseeing this project. She is responsible for developing marketing campaigns and initiatives aimed at promoting Cyclistic's bike-sharing services and increasing membership.
+
+  * Cyclistic Marketing Analytics Team: The team responsible for collecting, analysing, and reporting data to generate insights that inform the company's marketing strategies and business decisions.
+
+  * Cyclistic Executive Team: The company's senior leadership responsible for evaluating strategic proposals and determining whether to approve the recommended marketing initiatives.
+
+## **ASK**
+
+* The broader marketing objective at Cyclistic is to increase annual memberships by understanding the differences in usage behaviour between casual riders and annual members. To guide the development of an effective marketing strategy, the following key questions have been identified:
+
+  1. How do annual members and casual riders use Cyclistic's bikes differently?
+  2. What factors might motivate casual riders to purchase annual memberships?
+  3. How can Cyclistic leverage digital marketing channels to encourage casual riders to become annual members?
+
+* As part of this initiative, Lily Moreno has assigned me the first question: **How do annual members and casual riders use Cyclistic's bikes differently?** Addressing this question will involve examining their usage patterns and identifying behavioural differences that could provide insights into their respective preferences and riding habits.
+
+* The analysis will be guided by two fundamental considerations:
+
+  - **What problem am I trying to solve?** Identify the differences in bike usage between casual riders and annual members, with particular attention to patterns that may explain their membership choices.
+
+  - **How can my insights drive business decisions?** Translate the identified usage patterns into actionable insights that can help Cyclistic develop targeted marketing initiatives aimed at converting casual riders into annual members.
+
+## **PREPARE**
+
+* The preparation phase involved obtaining, importing, consolidating, and assessing the quality of the Divvy trip data before proceeding with the analysis. The datasets were obtained from Divvy's official trip data repository, which provides downloadable records of bike-sharing activities. The data covered the period from 2020 through July 2026 and was supplied in monthly CSV files.
+
+### **Data Importation and Consolidation**
+
+The downloaded datasets were imported into Microsoft SQL Server using SQL Server Management Studio (SSMS), which served as the primary environment for data storage, consolidation, validation, and cleaning.
+
+The individual datasets were consolidated into a master table, `Divvy_Trips`, to facilitate analysis across the entire observation period.&#x20;
+
+### **Data Cleaning and Validation**
+
+Several data-quality checks and cleaning procedures were undertaken to improve the consistency, reliability, and suitability of the dataset for analysis.
+
+**1. Duplicate Records**
+
+* Duplicate records were investigated using `ride_id`, the unique identifier assigned to each trip. Repeated identifiers were identified in some of the source datasets, including records from 2020 and 2024. These were examined to distinguish genuine duplicate entries from records containing minor discrepancies, particularly in their timestamps. Duplicate entries were resolved to ensure that each trip was represented only once in the final analytical dataset.
+
+**2. Timestamp and Trip Duration Validation**
+
+* The `started_at` and `ended_at` variables were examined to identify inconsistencies in trip timing and duration. Records exhibiting negative time differences were investigated during the cleaning process. Zero-duration trips were also identified and subsequently excluded because they did not represent meaningful completed trip durations for the intended analysis.
+
+**3. Removal of Invalid Station Entries**
+
+* Records containing `HQ QR` as the starting station name were identified and excluded. This entry was treated as an invalid station designation for the purposes of the analysis.
+
+**4. Missing Station Information**
+
+* Missing values in the station-related variables presented one of the more significant data-quality challenges. Rather than immediately discarding affected records, several approaches were explored to recover the missing information.
+
+* A supplementary station reference dataset, `Divvy_Stations`, containing 4,838 station records, was prepared for this exercise. The reference data was examined to retain a consistent station identifier structure and facilitate geographical matching.
+
+* For missing station names, geographical coordinates were used to identify the nearest known station. The Haversine distance formula was implemented in SQL Server to calculate geographical distances between the trip coordinates and the available station coordinates.
+
+* This approach was particularly useful for recovering missing station names where geographical coordinates were available, but station identifiers and names were absent. A substantial number of missing start and end station names were consequently recovered through coordinate-based matching.
+
+* For the end station variable, 4,698,761 missing station names were initially identified. Coordinate-based matching successfully populated 4,661,210 of these records, leaving 37,551 unresolved. Further investigation established that 37,513 records had missing end coordinates, while the remaining unresolved cases presented insufficient or unsuitable geographical information for reliable matching.
+
+* The missing start station names were also investigated using the same geographical matching approach. At a subsequent validation stage, 1,595,097 records still had missing start station names, although all contained available coordinates. These corresponded to 552 distinct coordinate pairs, which provided a basis for matching against the station reference dataset.
+
+* Despite these efforts, not all missing station information could be reliably recovered. Records with unresolved geographical information were retained rather than assigning unsupported values or discarding otherwise usable trip records. This ensured that the analysis preserved as much of the original trip information as possible.
+
+### **Final Data Validation**
+
+* Following the consolidation and cleaning procedures, the master dataset was subjected to further validation to assess its structural consistency and record integrity. Checks included examining the total number of records, verifying the uniqueness of `ride_id`, and reviewing the completeness of relevant variables.
+
+* At the final validation checkpoint, the consolidated `Divvy_Trips` table contained 35,309,599 records, with an equal number of distinct `ride_id` values, confirming the absence of duplicate trip identifiers.
+  * **NB;** 34,741 extreme duration outliers (> 24 hours) were subsequently filtered during behavioral and duration modeling to yield 35,274,858.*
+
+* The resulting dataset provided a consolidated foundation for the subsequent analytical phase. Although some missing station information remained unresolved, these limitations were documented and the affected records were retained where appropriate. The preparation process therefore prioritized data integrity, consistency, and the preservation of valid trip observations.
+
+## **ANALYZE**
+
+### **Rider comparison and membership distribution.**
+
+```{r}
+Membership_Summary <- dbGetQuery(
+  con,
+  "SELECT * FROM Membership_summary"
+)
+
+Membership_Summary |> 
+  mutate(pct = trip_count / sum(trip_count) * 100, 
+         label_text = sprintf("%s\n(%.2f%%)", scales::comma(trip_count), pct)) |> 
+  ggplot(aes(x = 2, y = trip_count, fill = member_casual)) +
+  geom_col(width = 1, colour = "white") +
+  coord_polar(theta = "y") +
+  xlim(0.5, 2.5) +
+  scale_fill_manual(values = c("member" = "navy", 
+                                "casual" = "darkgreen"), 
+                    labels = c("member" = "Annual Member", 
+                               "casual" = "Casual Rider")) +
+  geom_text(aes(label = label_text), 
+            position = position_stack(vjust = 0.5), 
+            colour = "white", 
+            size = 3.5,
+            fontface = "bold") +
+  labs(title = "Total Trips by Membership Status", 
+       subtitle = "Share of recorded trips across the cleaned dataset", 
+       fill = "Rider Type") +
+  theme_void() +
+  theme(plot.title = element_text(face = "bold", size = 14, hjust = 0.5), 
+        plot.subtitle = element_text(size = 10, hjust = 0.5),
+        legend.position = "top")
+```
+
+* An initial examination of the cleaned dataset was conducted to establish the distribution of trips by rider membership status. This was particularly important because membership status constitutes the primary explanatory variable in the study.
+
+* The analysis identified 35,309,599 recorded trips, of which 21,693,791 (61.44%) were undertaken by annual members, while 13,615,808 (38.56%) were undertaken by casual riders.
+
+* These findings indicate that annual members account for the larger share of Divvy's recorded trip activity. However, casual riders also contribute a substantial proportion of overall usage. The observed distribution provides an initial basis for investigating differences in riding patterns and behaviour between the two customer segments.
+
+### **Annual Growth in Ridership by Membership Status**
+
+```{r}
+Annual_Rider_Summary <- dbGetQuery(
+  con,
+  "SELECT * FROM Annual_Rider_Summary"
+)
+Annual_Rider_Summary |> 
+  select(-percentage_of_trips) |> 
+  pivot_wider(names_from = member_casual, 
+              values_from = trip_count) |> 
+  mutate(member_growth = (member - lag(member)) / lag(member) * 100,
+         casual_growth = (casual - lag(casual)) / lag(casual) * 100) |> 
+  filter(!is.na(member_growth), !is.na(casual_growth), 
+         trip_year < 2026) |> 
+  pivot_longer(cols = c(member_growth, casual_growth), 
+               names_to = "membership", 
+               values_to = "growth") |> 
+  ggplot(aes(x = factor(trip_year), y = growth, fill = membership)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  geom_hline(yintercept = 0, colour = "black", linewidth = 0.5) +
+  scale_fill_manual(values = c("member_growth" = "navy", 
+                                "casual_growth" = "darkgreen"), 
+                     labels = c("member_growth" = "Member", 
+                                "casual_growth" = "Casual")) +
+  geom_text(aes(label = sprintf("%.2f%%", growth), 
+                vjust = ifelse(growth >= 0, -0.5, 1.5)), 
+            position = position_dodge(width = 0.8), size = 3.5) +
+  scale_y_continuous(breaks = seq(-20, 100, 30), 
+                     expand = expansion(mult = c(0.12, 0.12))) +
+  labs(title = "Annual Growth in Divvy Trips by membership", 
+       subtitle = "Year-on-Year percentage change (2021 - 2025)", 
+       x = "Year", 
+       y = "Percentage growth (%)", 
+       fill = "membership", 
+       caption = "Source: Divvy trips, 2020-2025") +
+  theme_minimal() +
+  theme(plot.title = element_text(face = "bold", size = 14), 
+        plot.subtitle = element_text(size = 10), 
+        axis.title = element_text(face = "bold"), 
+        legend.position = "top", 
+        panel.grid.minor = element_blank())
+```
+
+
+* An examination of year-on-year changes in trip volumes revealed distinct growth patterns between annual members and casual riders over the study period. In 2021, total trip volume increased by 58.62%, with casual riders recording particularly strong growth of 86.01%, compared to 41.43% among members.
+
+* The subsequent two years exhibited contrasting trends. Member trips increased by 9.12% in 2022 and 9.40% in 2023, while casual trips declined by 8.18% and 11.33%, respectively. Consequently, overall trip growth remained relatively modest during these years.
+
+* In 2024, both categories registered positive growth, although the increase was more pronounced among casual riders. However, 2025 recorded a contraction in overall trip activity, with member and casual trips declining by 4.18% and 7.06%, respectively.
+
+* These findings demonstrate that changes in overall ridership were accompanied by differing growth patterns across membership categories. They reinforce the importance of analysing the two customer segments independently when evaluating Divvy's usage trends.
+
+### **Monthly Distribution by Membership Status**
+
+```{r}
+Monthly_Trip_Summary <- dbGetQuery(
+  con,
+  "SELECT * FROM Monthly_Trip_Summary"
+)
+Monthly_Trip_Summary |> 
+  pivot_longer(cols = c(member_trips, casual_trips), 
+               names_to = "membership", 
+               values_to = "trip_count") |> 
+  group_by(trip_month, month_name, membership) |> 
+  summarise(count = mean(trip_count, na.rm = TRUE), 
+            years_observed = n(), 
+            .groups = "drop") |> 
+  arrange(trip_month) |> 
+  mutate(month_name = factor(month_name, levels = month.name, 
+                             ordered = TRUE)) |> 
+  ggplot(aes(x = month_name, y = count, fill = membership)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  scale_fill_manual(values = c("member_trips" = "navy", 
+                               "casual_trips" = "darkgreen")) +
+  labs(title = "Average Monthly Divvy Trips by Membership", 
+       subtitle = "Mean monthly trip volume across observed years (2021-2026)", 
+       x = "Month", 
+       y = "Average Monthly Trips", 
+       fill = "membership", 
+       caption = "Source: Divvy trips, 2020-2026") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1),
+        plot.title = element_text(face = "bold", size = 14), 
+        plot.subtitle = element_text(size = 10), 
+        axis.title = element_text(face = "bold"), 
+        legend.position = "top", 
+        panel.grid.minor = element_blank(), 
+        )
+```
+
+* An examination of monthly trip distributions revealed distinct seasonal patterns in Divvy usage across the two membership categories. Annual members consistently accounted for a larger proportion of trips during the colder months, particularly between November and February. Conversely, the relative contribution of casual riders increased as the year progressed towards the summer months.
+
+* This pattern was particularly pronounced between June and August, when the difference in trip contributions between the two categories narrowed considerably. In 2021, casual riders even surpassed annual members during these three months, accounting for 53.75% of trips in July.
+
+* From 2023 onwards, annual members maintained the majority share throughout the year, although the seasonal increase in casual ridership remained evident.
+
+* These findings suggest that membership categories exhibit different seasonal usage patterns, highlighting the importance of considering temporal variations when examining customer riding behaviour.
+
+### **Distribution by Day of the Week**
+
+```{r}
+Daily_Trip_Summary <- dbGetQuery(
+  con,
+  "SELECT * FROM Daily_Trip_Summary"
+)
+Daily_Trip_Summary |> 
+  pivot_longer(cols = c(member_trips, casual_trips), 
+               names_to = "member_casual", 
+               values_to = "group_trips") |> 
+  group_by(weekday_number, weekday, member_casual) |> 
+  summarise(avg_trips = mean(group_trips, na.rm = TRUE), 
+            .groups = "drop") |> 
+  arrange(weekday_number) |> 
+  mutate(weekday = factor(weekday, 
+         levels = c("Monday", "Tuesday", "Wednesday", "Thursday", 
+                    "Friday", "Saturday", "Sunday"), ordered = TRUE)) |> 
+  ggplot(aes(x = weekday, y = avg_trips, fill = member_casual)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  scale_fill_manual(
+    labels = c("member_trips" = "Annual Member", 
+               "casual_trips" = "Casual Rider"), 
+    values = c("member_trips" = "navy", "casual_trips" = "darkgreen")) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(title = "Average Trips by Day of Week and Membership", 
+       subtitle = "Average trip count over weekday across observed years", 
+       x = "Day of the Week", 
+       y = "Average Trips", 
+       fill = "Rider Type", 
+       caption = "Source: Divvy_Trips (Daily_Trip_Summary)") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 35, hjust = 1), 
+    plot.title = element_text(face = "bold", size = 14), 
+    plot.subtitle = element_text(size = 10), 
+    axis.title = element_text(face = "bold"), 
+    legend.position = "top", 
+    panel.grid.minor = element_blank()
+  )
+```
+
+* Day-of-Week Usage Summary: Ridership patterns reveal a clear functional divide between annual members and casual riders. Across the observed period (2020–2025 full years plus January–July 2026), annual members drive the majority of weekday trips—peaking mid-week on Wednesday (489,872 average trips) and Thursday (485,492)—consistent with regular work or school commuting. Casual riders maintain lower weekday volumes (ranging from 216,899 on Tuesday to 290,389 on Friday) before surging on Saturday to 409,899 average trips—effectively matching annual members (409,545)—and remaining elevated on Sunday (335,792 casual vs. 352,817 member). This strong weekend surge highlights leisure and recreational demand as a primary casual riding driver and points to weekend-oriented messaging as a promising angle for membership conversion.
+
+### **Distribution by Hour of the Day**
+
+```{r}
+Hourly_Trip_Summary <- dbGetQuery(
+  con,
+  "SELECT * FROM Hourly_Trip_Summary"
+)
+
+
+Hourly_Trip_Summary |> 
+  arrange(Trip_Hour) |> 
+  ggplot(aes(x = Trip_Hour, y = Trip_Count, colour = member_casual,
+             group = member_casual)) +
+  geom_line(linewidth = 0.8) +
+  geom_point(size = 2) +
+  scale_colour_manual(
+    values = c("member" = "navy", "casual" = "darkgreen"), 
+    labels = c("member" = "Annual Member", "casual" = "Casual Rider")
+  ) +
+  scale_x_continuous(breaks = 0:23) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(
+    title = "Hourly Distribution of Divvy Trips by Membership", 
+    subtitle = "Total trips by hour of the day", 
+    x = "Hour of the Day (0 = Midnight, 23 = 11 PM)", 
+    y = "Total Trips", 
+    colour = "Rider Type", 
+    caption = "Source: Divvy_Trips (Hourly_Trip_Summary)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14), 
+    plot.subtitle = element_text(size = 10), 
+    axis.title = element_text(face = "bold"), 
+    legend.position = "top", 
+    panel.grid.minor = element_blank()
+  )
+```
+
+* Examining trip volume across the 24-hour cycle reinforces the functional distinction between annual members and casual riders. Annual members exhibit a pronounced bimodal distribution characterized by two sharp rush-hour peaks—a morning surge peaking at 8:00 AM (~1.45 million trips) and a larger evening peak at 5:00 PM (~2.35 million trips)—separated by a midday dip around 10:00 AM. This pattern aligns strongly with daily work and school commuting schedules. In contrast, casual riders display a single, gradual bell-shaped curve that builds steadily throughout the morning and early afternoon without a morning commute spike, peaking at 5:00 PM (~1.35 million trips) before tapering off into the night. Notably, late-night activity between 10:00 PM and 2:00 AM shows casual and member volumes converging. Together with the day-of-week results, these hourly trends confirm that annual members rely on Divvy primarily for structured commuting, whereas casual riders favour flexible daytime and evening leisure travel.
+
+### **Distribution by Bike Types**
+
+```{r}
+Bike_Type_Summary <- dbGetQuery(
+  con,
+  "SELECT * FROM Bike_Type_Summary"
+)
+
+Bike_Type_Summary |> 
+  arrange(rideable_type, member_casual) |> 
+  ggplot(aes(x = rideable_type, y = Trip_Count, fill = member_casual)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  scale_fill_manual(values = c("member" = "navy", "casual" = "darkgreen"), 
+                    labels = c("member" = "Annual Member", 
+                               "casual" = "Casual Rider")) +
+  scale_x_discrete(
+    labels = c(
+      "classic_bike" = "Classic Bike", 
+      "docked_bike" = "Docked Bike",
+      "electric_bike" = "Electric Bike", 
+      "electric_scooter" = "Electric Scooter"
+    ) 
+  ) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(
+    title = "Total Trips by Bike Type and Membership",
+    subtitle = "Total trips of different bikes across observed years",
+    x = "Bike Types",
+    y = "Total Trips", 
+    fill = "Rideable Type", 
+    caption = "Source: Divvy_Trips (Bike_Type_Summary)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(size = 10), 
+    axis.title = element_text(face = "bold"), 
+    legend.position = "top",
+    panel.grid.minor = element_blank()
+  )
+```
+
+
+* Analysis of total trips across vehicle categories (2020–2025 full years plus January–July 2026) shows that electric bikes are the single most popular option for both rider groups, accounting for 10,524,850 annual member trips and 6,818,005 casual trips. Classic bikes rank second across both segments, with annual members logging 9,296,880 trips compared to 5,005,518 by casual riders. Legacy docked bikes show a nearly balanced split between members (1,812,939 trips) and casual riders (1,707,070 trips), while electric scooters represent a small niche and are the only vehicle type where casual trips (85,215) exceed member trips (59,122). 
+* Because electric bikes account for nearly half of all casual rides in the dataset and because Divvy’s public pricing model waives unlock fees and reduces per-minute rates on e-bikes for annual members—marketing e-bike cost savings offers a clear, data-backed incentive to convert frequent casual riders into annual members.
+
+
+### **Trip Duration Analysis** 
+
+```{r}
+Ride_Length_Summary <- dbGetQuery(
+  con,
+  "SELECT * FROM Ride_Length_Summary"
+)
+
+Ride_Length_Summary
+
+Daily_Ride_Length_Summary <- dbGetQuery(
+  con,
+  "SELECT * FROM Daily_Ride_Length_Summary 
+  ORDER BY weekday_number, member_casual"
+)
+
+weekday_order <- c("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", 
+                   "Saturday", "Sunday")
+Daily_Ride_Length_Summary |> 
+  mutate(weekday = factor(weekday, levels = weekday_order)) |> 
+  ggplot(aes(x = weekday, y = median_mins, fill = member_casual)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  scale_fill_manual(
+    values = c("member" = "navy", "casual" = "darkgreen"), 
+    labels = c("member" = "Annual Members", "casual" = "Casual Riders")) +
+  labs(
+    title = "Median Trip Duration by Day of the Week and Membership.", 
+    subtitle = "Median ride length in minutes.", 
+    x = "Day of Week", 
+    y = "Median Duration (Minutes)", 
+    fill = "Rider Type", 
+    caption = "Source: Divvy_Trips") +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 35, hjust = 1),
+    plot.title = element_text(face = "bold", size = 14), 
+    plot.subtitle = element_text(size = 10), 
+    axis.title = element_text(face = "bold"), 
+    legend.position = "top", 
+    panel.grid.minor = element_blank()
+  )
+
+```
+
+
+* To ensure analytical accuracy and eliminate system artifacts, rides exceeding 24 hours (classified under Divvy’s public operating policy as lost, stolen, or un-docked bike anomalies) were excluded prior to aggregation, leaving 35,274,858 valid trips (21,688,221 annual member trips and 13,586,637 casual trips).
+
+* Across all valid rides, casual riders spend substantially more time per trip than annual members, recording a median duration of 13 minutes (mean: 22 minutes) compared to 8 minutes (mean: 12 minutes) for annual members. In both segments, the mean notably exceeds the median, confirming a right-skewed distribution driven by long-tail recreational rides and validating the use of median duration as the primary benchmark. Furthermore, casual riders exhibit a wider interquartile range (7 to 25 minutes, IQR = 18 minutes) than annual members (5 to 15 minutes, IQR = 10 minutes), reflecting flexible, unhurried usage versus consistent point-to-point commuting. Daily breakdowns reinforce this pattern: annual member median durations remain virtually flat across the week (8 minutes Monday–Friday, 9 minutes on weekends), whereas casual median durations climb from 11–12 minutes on weekdays to 15 minutes on Saturdays and Sundays.
+
+* Because casual riders regularly take longer trips—particularly on weekends—per-minute pricing on single rides and e-bikes quickly compounds for frequent users. Highlighting how an annual membership covers unlimited 45-minute classic bike rides and lowers per-minute e-bike rates directly addresses the usage profile of multi-ride casual users.
+
+### **Top Stations and Round-Trip Routing**
+
+```{r}
+Top_Start_Stations <- dbGetQuery(
+  con, 
+  "SELECT * FROM Top_Start_Stations ORDER BY station_rank, member_casual"
+)
+
+Trip_Pattern_Summary <- dbGetQuery(
+  con,
+  "SELECT * FROM Trip_Pattern_Summary"
+)
+
+Trip_Pattern_Summary
+
+library(tidytext)
+Top_Start_Stations |> 
+  ggplot(aes(x = trip_count, 
+             y = reorder_within(start_station_name, trip_count, member_casual), 
+             fill = member_casual)) +
+  geom_col(show.legend = FALSE) +
+  facet_wrap(~ member_casual, scales = "free_y", 
+             labeller = as_labeller(c(
+               "member" = "Annual Member", 
+               "casual" = "Casual Rider"
+             ))) +
+  tidytext::scale_y_reordered() +
+  scale_fill_manual(values = c("member" = "navy", 
+                               "casual" = "darkgreen")) +
+  scale_x_continuous(labels = scales::comma) +
+  labs(
+    title = "Top 10 Start Stations by Membership Status", 
+    subtitle = "Highest volume departure station among valid trips.",
+    x = "Total Trips", 
+    y = "Start Station", 
+    caption = "Source: Divvy_Trips"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14),
+    plot.subtitle = element_text(size = 10), 
+    axis.title = element_text(face = "bold"), 
+    panel.grid.minor = element_blank()
+  )
+
+```
+
+* Spatial analysis of valid trips with recorded station names reveals a stark geographic divide between rider segments. Casual riders heavily concentrate at Chicago’s lakefront, parks, and tourist landmarks—led overwhelmingly by Streeter Dr & Grand Ave (exceeding 300,000 starts), followed by DuSable Lake Shore Dr & Monroe St, Michigan Ave & Oak St, Millennium Park, Theater on the Lake, and Shedd Aquarium. Conversely, annual members distribute more evenly across commercial, residential, and university transit corridors, led by Kingsbury St & Kinzie St, University Ave & 57th St, LaSalle St & Illinois St, Clark St & Elm St, and Clinton St & Washington Blvd.
+
+* Route-type analysis (Trip_Pattern_Summary) further reinforces this behavioral split. Among trips with known start and end stations, 11.05% of casual rides (1,501,243 of 13,582,222 trips) are round trips returning to the origin station, more than double the 4.88% round-trip rate observed among annual members (1,057,661 of 21,685,078 trips).
+
+Strategic Implication: Casual ridership is heavily anchored around high-traffic lakefront and recreational hubs. Deploying targeted digital promotions, dock signage, and geo-fenced app notifications at top casual departure stations—especially Streeter Dr & Grand Ave, DuSable Lake Shore Dr & Monroe St, and Millennium Park—during peak weekend afternoons offers the highest-leverage opportunity to reach repeat casual riders and convert them to annual memberships.
+
+### **Statistical Test for Independence**
+
+```{r}
+# Building a 2*2 contingency table from Trip_Pattern_Summary
+Route_Matrix <- matrix(
+  c(1057661, 1501243, # Round Trip (Same Station): member, casual
+    20627417, 12080979), # Point-to-Point (Different Station): Member Casual
+  nrow = 2, 
+  byrow = TRUE, 
+  dimnames = list(
+    trip_pattern = c("Round_Trip", "Point-to_Point"), 
+    member_casual = c("member", "casual")
+  )
+)
+
+Route_Matrix
+
+chi_route <- chisq.test(Route_Matrix, correct = FALSE)
+
+chi_route
+
+#Expected counts under the null hypothesis of independence
+chi_route$expected
+
+# Computer Cramér's V for 2*2 table (phi coefficient = sqtr(chi^2 / N))
+n_total <- sum(Route_Matrix)
+
+cramers_v <- sqrt(as.numeric(chi_route$statistic) / n_total)
+
+cramers_v
+```
+
+* **Statistical Test of Independence — Membership vs. Route Pattern** ($\chi^2$): A Pearson Chi-Square test of independence was conducted across 35,267,300 valid trips with known start and end stations to test whether rider type (member vs. casual) is statistically associated with round-trip versus point-to-point routing. The test confirms a highly significant association between membership status and route pattern ($\chi^2(1) = 473,319$, $p < 2.2 \times 10^{-16}$, $Cramér's V = 0.116$), demonstrating that casual riders' higher propensity to return bikes to their starting dock is not due to random variation.
+
+### **Monthly Annual Start Stations Vs. Annual Member Trips**
+
+```{r}
+Monthly_Station_Riderships <- dbGetQuery(
+  con,
+  "SELECT * FROM Monthly_Station_Riderships
+  ORDER BY ride_year, ride_month"
+)
+
+# 1. person coorelation test (Active Station VS Membersip Status)
+cor_test_station <- cor.test(
+  Monthly_Station_Riderships$active_start_stations, 
+  Monthly_Station_Riderships$member_trips,
+  method = "pearson"
+)
+
+cor_test_station
+
+# 2. Simple linear regression model
+station_lm <- lm(member_trips ~ active_start_stations, 
+                 data = Monthly_Station_Riderships)
+summary(station_lm)
+
+# 3. scatterplot with linear TrendLine
+Monthly_Station_Riderships |> 
+  ggplot(aes(x = active_start_stations, y = member_trips)) +
+  geom_point(colour = "navy", alpha = 0.75, size = 2.5) +
+  geom_smooth(method = "lm", se = TRUE, 
+              colour = "darkgreen", fill = "lightgreen", 
+              alpha = 0.25) +
+  scale_x_continuous(labels = scales::comma) +
+  scale_y_continuous(labels = scales::comma) +
+  labs(
+    title = "Monthly Active Start Stations Vs. Annual Member Trips", 
+    subtitle = "Each point represents one month; shaded band shows 95% confidence interval", 
+    x = "Active Start Station per Month", 
+    y = "Monthly Annual Member Trips", 
+    caption = "Source: Divvy_Trips (Monthly_Station_Riderships)"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(face = "bold", size = 14), 
+    plot.subtitle = element_text(size = 10), 
+    axis.title = element_text(face = "bold"), 
+    panel.grid.minor = element_blank()
+  )
+```
+
+* Across 79 monthly observations, active start station count shows a moderately strong, statistically significant positive correlation with annual member trip volume (Pearson's $r = 0.626$, 95% CI: $[0.470, 0.744]$, $t(77) = 7.05$, $p = 6.70 \times 10^{-10}$). Simple linear regression further indicates that each additional active start station in a month is associated with an average gain of approximately 261 member trips ($\text{Member Trips} = -21,022.68 + 261.04 \times \text{Active Stations}$; $SE = 37.03$, $F(1, 77) = 49.70$, $p = 6.70 \times 10^{-10}$), explaining 39.2% of the monthly variance in member ridership ($R^2 = 0.3922$; Adjusted $R^2 = 0.3844$). While network availability clearly aligns with higher member trip counts, broader seasonal shifts and multi-year growth trends account for the remaining 60.8% of variation.
+
+
+### **Predictive Classification Model — Logistic Regression**
+
+```{r}
+Sample_Trips <- dbGetQuery(
+  con,
+  "SELECT * FROM Sample_Trips"
+)
+
+library(pROC)
+
+model_df <- Sample_Trips |> 
+  mutate(
+    is_member = factor(is_member, levels = c(0, 1)), 
+    is_weekend = factor(is_weekend, levels = c(0, 1)), 
+    is_rush_hour = factor(is_rush_hour, levels = c(0, 1)),
+    is_round_trip = factor(is_round_trip, levels = c(0, 1)), 
+    rideable_type = factor(rideable_type)
+  )
+
+set.seed(42)
+train_idx <- sample(seq_len(nrow(model_df)), size = 0.7 * nrow(model_df))
+train_data <- model_df[train_idx, ]
+test_data <- model_df[-train_idx, ]
+
+# fiting a logical regression (GLM with binomial logit link)
+ logit_model <- glm(
+   is_member ~ log1p(duration_min) + is_weekend + is_rush_hour + is_round_trip + rideable_type, 
+   data = train_data, 
+   family = binomial(link = "logit")
+ )
+ 
+ summary(logit_model)
+
+ #Odd ratio and 95% confidence intervals
+ odds_ratio <- exp(cbind(OR = coef(logit_model), confint.default(logit_model)))
+ round(odds_ratio, 4)
+ 
+ #Out of sample predictions & ROC-AUC
+ test_probs <- predict(logit_model, newdata = test_data, type = "response")
+ rock_obj <- roc(response = test_data$is_member, 
+                 predictor = test_probs, quiet = TRUE)
+ auc(rock_obj)
+ 
+ #confusion matrix at 0.50 cutoff
+ test_pred_class <- factor(ifelse(test_probs >= 0.5, "1", "0"), 
+                           levels = c("0", "1"))
+ 
+table(Actual = test_data$is_member, Predicted = test_pred_class)
+mean(test_pred_class == test_data$is_member)
+
+
+```
+
+* To quantify how strongly individual trip attributes distinguish annual members from casual riders, a binomial logistic regression model was trained on a balanced random sample of 140,000 trips (70,000 member; 70,000 casual) and evaluated on 60,000 held-out test trips. All predictors were highly significant ($p < 2 \times 10^{-16}$). Holding other factors constant, rush-hour timing increases the odds of a ride belonging to an annual member by 33.4% ($\text{OR} = 1.334$, 95% CI $[1.304, 1.364]$). Conversely, round-trip routing reduces member odds by 67.1% ($\text{OR} = 0.329$, 95% CI $[0.314, 0.344]$), weekend riding reduces member odds by 40.0% ($\text{OR} = 0.600$, 95% CI $[0.586, 0.615]$), and longer trip durations (log1p(duration_min)) sharply lower member probability ($\text{OR} = 0.537$, 95% CI $[0.529, 0.545]$). Relative to classic bikes, electric bikes ($\text{OR} = 0.711$), docked bikes ($\text{OR} = 0.741$), and electric scooters ($\text{OR} = 0.279$) also skew significantly toward casual riders. On out-of-sample test data, the model achieves an ROC-AUC of 0.670 and 61.95% classification accuracy (37,169 / 60,000 correct), providing multivariate confirmation that commute timing, point-to-point routing, and shorter durations define the annual member behavioral profile.
+
+## **ACT: Strategic Recommendations: Converting Casual Riders into Annual Members**
+### **1. Target High-Frequency E-Bike & Extended-Ride Casual Users with Cost-Savings Triggers**
+  * Casual riders record a 62.5% longer median duration than members (13 minutes vs. 8 minutes) and generate 6,818,005 electric bike trips (nearly half of all casual rides). Multivariate logistic regression confirms that longer trip lengths (log1p(duration_min): $\text{OR} = 0.537$) and e-bike usage ($\text{OR} = 0.711$ vs. classic bikes) strongly characterize casual riding.
+  * Configure automated in-app break-even prompts triggered immediately after a casual rider completes their second or third trip within a 30-day window. Display a personalized side-by-side receipt showing how much they paid in unlock fees and per-minute e-bike charges versus what those exact rides would have cost under an annual membership (which waives unlock fees, discounts e-bike per-minute rates, and includes unlimited 45-minute classic bike rides).
+
+### **2. Introduce a Flexible "Weekend & Leisure" Pass or Seasonal Bridge Tier**
+  * Casual ridership surges on Saturdays and Sundays with a 15-minute median duration, while logistic regression shows that weekend rides reduce the odds of member status by 40.0% ($\text{OR} = 0.600$). Furthermore, casual riders are more than twice as likely to take round-trip loop rides (11.05% vs. 4.88% for members; $\chi^2 = 473,319$, $p < 2.2 \times 10^{-16}$; $\text{OR} = 0.329$).
+  * Many local casual riders use Divvy primarily for weekend recreation rather than weekday commuting, creating psychological resistance to a full 12-month commuter commitment. Launch a lower-barrier Seasonal Summer Pass (May–September) or a Weekend-Plus Membership with an automatic, discounted upgrade credit toward a full annual plan after 60 days.
+
+### **3. Deploy Geo-Fenced Promotions at High-Concentration Lakefront & Park Hubs**
+  * Casual starts cluster heavily at leisure landmarks—led by Streeter Dr & Grand Ave, DuSable Lake Shore Dr & Monroe St, Michigan Ave & Oak St, and Millennium Park—where round-trip loop behavior is most prevalent.
+  * Concentrate physical dock signage (featuring QR codes for a discounted first month) and location-triggered push notifications at the top 10 casual stations during peak weekend afternoon hours (11:00 AM – 5:00 PM). Pair these offers with curated "Scenic Loop" route suggestions inside the member app to show leisure riders ongoing value beyond point-to-point commuting.
+
+### **4. Convert "Commuter-Like" Casual Riders Using Behavioral Scoring**
+  * Logistic regression demonstrates that rush-hour timing (7–9 AM, 4–6 PM) increases the odds of a ride belonging to an annual member by 33.4% ($\text{OR} = 1.334$), alongside point-to-point routing and shorter durations.
+  * Use your logistic regression probability score (test_probs) in production to flag casual accounts whose ride profiles mimic annual members (e.g., $\ge 2$ short, point-to-point weekday rush-hour trips in a month). Target this high-intent segment with commuter-focused messaging emphasizing reliability, guaranteed dock availability, and employer commuter-benefit eligibility.
+
+### **5. Prioritize Station Expansion & E-Bike Fleet Density Along Transit-Connected Corridors**
+  *  Monthly active start station count shows a moderately strong positive correlation with monthly annual member trip volume ($r = 0.626$, $p = 6.70 \times 10^{-10}$), with linear regression indicating an average gain of ~261 monthly member trips per additional active station ($R^2 = 0.392$).
+  * Coordinate dock expansion and rebalancing efforts around residential neighborhoods, university campuses (such as University Ave & 57th St), and rail/bus transit hubs (such as Clinton St & Washington Blvd and Kingsbury St & Kinzie St). Expanding reliable first-mile/last-mile station coverage directly reinforces the point-to-point utility that sustains long-term annual memberships.
+  
+```{r}
+dbDisconnect(con)
+```
+
